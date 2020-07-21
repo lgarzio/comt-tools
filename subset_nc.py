@@ -3,7 +3,7 @@
 """
 Author: Mike Smith
 Modified on July 14, 2020 by Lori Garzio
-Last modified July 14, 2020
+Last modified July 21, 2020
 """
 import numpy as np
 import os
@@ -34,8 +34,8 @@ def main(fpath):
 
     # List of variables that are already included in the WRF output and that we want to compute using the wrf-python
     variables = dict(
-        primary=['XLAT', 'XLONG', 'LANDMASK', 'LAKEMASK', 'SST', 'LH', 'HFX', 'U10', 'V10'],
-        computed=['slp']
+        primary=['XLAT', 'XLONG', 'LANDMASK', 'LAKEMASK', 'SST', 'LH', 'HFX', 'U10', 'V10', 'T2'],
+        computed=['slp', 'rh2']
     )
 
     os.makedirs(os.path.dirname(save_file), exist_ok=True)
@@ -89,6 +89,8 @@ def main(fpath):
     ds['XLAT'].attrs['axis'] = 'Y'
     ds['XLAT'].attrs['valid_min'] = np.float32(-90.0)
     ds['XLAT'].attrs['valid_max'] = np.float32(90.0)
+
+    ds['T2'].attrs['long_name'] = 'Air Temperature at 2m'
 
     datetime_format = '%Y%m%dT%H%M%SZ'
     created = pd.Timestamp(pd.datetime.utcnow()).strftime(datetime_format)  # creation time Timestamp
