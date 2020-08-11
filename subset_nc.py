@@ -3,11 +3,13 @@
 """
 Author: Mike Smith
 Modified on July 14, 2020 by Lori Garzio
-Last modified July 21, 2020
+Last modified Aug 11, 2020
 """
+import argparse
 import numpy as np
 import os
 import pandas as pd
+import sys
 import xarray as xr
 from collections import OrderedDict
 from wrf import getvar, ALL_TIMES
@@ -28,9 +30,11 @@ def delete_attr(da):
     return da
 
 
-def main(fpath):
+def main(args):
+    fpath = args.file
     fname = fpath.split('/')[-1]
     save_file = os.path.join(os.path.dirname(fpath), '{}_subset.nc'.format(fname.split('.')[0]))
+    print('Subsetting {}'.format(fname))
 
     # List of variables that are already included in the WRF output and that we want to compute using the wrf-python
     variables = dict(
@@ -119,5 +123,13 @@ def main(fpath):
 
 
 if __name__ == '__main__':
-    filepath = '/Users/lgarzio/Documents/rucool/Miles/NOAA_COMT/tsfay/20200715/fay_wrf_his_d01_2020-07-09_12_00_00.nc'
-    main(filepath)
+    arg_parser = argparse.ArgumentParser(description=main.__doc__,
+                                         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    arg_parser.add_argument('-f', '--file',
+                            dest='file',
+                            type=str,
+                            help='Full file path to raw netCDF file to subset')
+
+    parsed_args = arg_parser.parse_args()
+    sys.exit(main(parsed_args))
