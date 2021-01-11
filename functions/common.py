@@ -2,12 +2,11 @@
 
 """
 Author: Lori Garzio on 1/7/2021
-Last modified: 1/7/2021
+Last modified: 1/11/2021
 """
 
 import numpy as np
 import xarray as xr
-import pandas as pd
 import matplotlib.pyplot as plt
 
 
