@@ -27,14 +27,15 @@ def pearson_correlation(data1, data2):
     return pc
 
 
-def taylor_template(angle_lim, std_lim):
+def taylor_template(angle_lim, std_lim, rect, fig=None):
     # written by Maria Aristizabal: https://github.com/MariaAristizabal/Evaluation_surf_metrics_Dorian_figures
     import mpl_toolkits.axisartist.floating_axes as floating_axes
     from matplotlib.projections import PolarAxes
     from mpl_toolkits.axisartist.grid_finder import (FixedLocator,
                                                      DictFormatter)
 
-    fig = plt.figure()
+    if fig is None:
+        fig = plt.figure()
     tr = PolarAxes.PolarTransform()
 
     min_corr = np.round(np.cos(angle_lim), 1)
@@ -56,7 +57,7 @@ def taylor_template(angle_lim, std_lim):
         grid_locator2=gfs,
         tick_formatter2=tfs)
 
-    ax1 = floating_axes.FloatingSubplot(fig, 111, grid_helper=grid_helper)
+    ax1 = floating_axes.FloatingSubplot(fig, rect, grid_helper=grid_helper)
     fig.add_subplot(ax1)
 
     ax1.axis["top"].set_axis_direction("bottom")

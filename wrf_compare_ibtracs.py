@@ -2,7 +2,7 @@
 
 """
 Author: Lori Garzio on 1/7/2021
-Last modified: 1/7/2021
+Last modified: 1/11/2021
 Compares SLP from IBTrACS data to different WRF model runs for Hurricane Irene
 """
 
@@ -11,6 +11,7 @@ import os
 import glob
 import pandas as pd
 import xarray as xr
+import pickle
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import cartopy.crs as ccrs
@@ -25,6 +26,10 @@ def format_date_axis(axis):
 def main(ddir):
     save_dir = os.path.join(os.path.dirname(ddir), 'plots')
     os.makedirs(save_dir, exist_ok=True)
+
+    # get the plotting colors and labels: [label, color]
+    with open('plt_labels.pickle', 'rb') as handle:
+        plt_labs = pickle.load(handle)
 
     wrf_files = sorted(glob.glob(os.path.join(ddir, '*subset.nc')))
     wrf_dict = {}
@@ -76,10 +81,6 @@ def main(ddir):
         # calculate bias between model and obs (IBTrACS) and add to dictionary
         wrf_dict[fname]['minslp']['bias'] = cf.model_bias(ib_slp_interp, minslp)
 
-    # define colors and labels for plots
-    colors = ['tab:blue', 'tab:orange', 'tab:brown', 'tab:pink', 'tab:purple']
-    labels = ['k-kl', r'k-$\epsilon$', r'k-$\omega$', 'HyCOM', 'MUR SST']
-
     # plot map of minimum SLP
     proj = ccrs.PlateCarree()
     fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(projection=proj))
@@ -90,7 +91,7 @@ def main(ddir):
         cnt = 0
         for key, item in wrf_dict.items():
             if 'wrf' in key:
-                ax.plot(item[pv]['lons'], item[pv]['lats'], transform=proj, color=colors[cnt], label=labels[cnt])
+                ax.plot(item[pv]['lons'], item[pv]['lats'], transform=proj, color=plt_labs[key][1], label=plt_labs[key][0])
                 cnt += 1
 
     # add map features
@@ -114,7 +115,7 @@ def main(ddir):
         cnt = 0
         for key, item in wrf_dict.items():
             if 'wrf' in key:
-                ax.plot(wrf_dict['tm'], item[pv]['values'], color=colors[cnt], label=labels[cnt], lw=2)
+                ax.plot(wrf_dict['tm'], item[pv]['values'], color=plt_labs[key][1], label=plt_labs[key][0], lw=2)
                 cnt += 1
 
     ax.set_ylim([950, 980])
@@ -133,14 +134,14 @@ def main(ddir):
     angle_lim = np.pi / 2
     std_lim = 1.75
 
-    fig, ax = cf.taylor_template(angle_lim, std_lim)
+    fig, ax = cf.taylor_template(angle_lim, std_lim, 111)  # 111 = 1 plot
 
     cnt = 0
     for key, item in wrf_dict.items():
         if 'wrf' in key:
             theta = np.arccos(item['minslp']['corr'])
             rr = item['minslp']['std'] / ib_slp_interp_stdev
-            ax.plot(theta, rr, 's', color=colors[cnt], markersize=8)
+            ax.plot(theta, rr, 's', color=plt_labs[key][1], markersize=8)
             cnt += 1
 
     ax.plot(0, 1, 'o', label='Obs', markersize=8)
