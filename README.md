@@ -20,3 +20,6 @@ Create conda environment from the included environment.yml file:
 Once the environment is done building, activate the environment:
 
 `conda activate comt-tools`
+
+## Files
+The IBTrACS hurricane track data can be found [here](https://www.ncdc.noaa.gov/ibtracs/index.php?name=ib-v4-access)
