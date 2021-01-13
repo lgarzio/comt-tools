@@ -144,7 +144,7 @@ def main(ddir):
             ax.plot(theta, rr, 's', color=plt_labs[key][1], markersize=8)
             cnt += 1
 
-    ax.plot(0, 1, 'o', label='Obs', markersize=8)
+    ax.plot(0, 1, 'o', color='blue', label='Obs', markersize=8)
 
     rs, ts = np.meshgrid(np.linspace(0, std_lim), np.linspace(0, angle_lim))
     rms = np.sqrt(1 + rs ** 2 - 2 * rs * np.cos(ts))
