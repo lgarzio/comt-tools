@@ -2,7 +2,9 @@
 
 """
 Author: Lori Garzio on 1/11/2021
-Last modified: 1/11/2021
+Last modified: 1/13/2021
+Compares SST, Air Temperature, Wind Speed, and SLP from NDBC buoys 44009 and 44065 to different WRF model runs for
+Hurricane Irene. Interpolated buoy time to WRF time.
 """
 
 import numpy as np
@@ -62,7 +64,7 @@ def main(ddir):
                 v_interp = bv.interp(time=wrf_time)
                 v_interp_stdev = v_interp.std().values.item()
 
-                # add interpolated buoy data (raw and interpolated) to dictionary
+                # add buoy data (raw and interpolated) to dictionary
                 try:
                     ddict[buoy][pv]
                 except KeyError:
@@ -156,15 +158,19 @@ def main(ddir):
     # plot Taylor diagrams
     fig, axs = plt.subplots(2, 2, figsize=(10, 10))
 
-    titles = ['SST', '2m Air Temperature', '10m Wind Speed', 'Sea Level Pressure']
+    #titles = ['SST', '2m Air Temperature', '10m Wind Speed', 'Sea Level Pressure']
+
+    plt.text(0.08, 0.88, 'A)', fontsize=14, transform=plt.gcf().transFigure)
+    plt.text(0.5, 0.88, 'B)', fontsize=14, transform=plt.gcf().transFigure)
+    plt.text(0.08, 0.46, 'C)', fontsize=14, transform=plt.gcf().transFigure)
+    plt.text(0.5, 0.46, 'D)', fontsize=14, transform=plt.gcf().transFigure)
 
     # turn off the subplot axis lines and labels
     for i, ax in enumerate(fig.axes):
         ax.axis('off')
-        ax.set_title(titles[i])
 
     angle_lim = np.pi / 2
-    std_lim = 1.75
+    std_lim = 1.75  # for normalized taylor diagram
 
     # for taylor contours
     rs, ts = np.meshgrid(np.linspace(0, std_lim), np.linspace(0, angle_lim))
@@ -189,19 +195,17 @@ def main(ddir):
                         if 'wrf' in key2:
                             theta = np.arccos(item2['corr'])
                             rr = item2['wrf_std'] / item1['buoy_interp_std']
-                            if key1 == 'slp':  # for the last plot, extract labels for legend
-                                axis_keys[key1].plot(theta, rr, marker_shp[key], color=plt_labs[key2][1],
-                                                     label=plt_labs[key2][0], markersize=8, mec='k')
-                            else:
-                                axis_keys[key1].plot(theta, rr, marker_shp[key], color=plt_labs[key2][1],
-                                                     markersize=8, mec='k')
+                            # axis_keys[key1].plot(theta, rr, marker_shp[key], color=plt_labs[key2][1],
+                            #                      markersize=8, mec='k')
+                            axis_keys[key1].plot(theta, rr, marker_shp[key], markersize=9, fillstyle='none',
+                                                 mec=plt_labs[key2][1], markeredgewidth=2)
+
                     # add contours
-                    axis_keys[key1].plot(0, 1, 'D', color='y', markersize=8, mec='k', alpha=1)
+                    axis_keys[key1].plot(0, 1, 'o', color='tab:blue', markersize=8, mec='k', alpha=1)
                     contours = axis_keys[key1].contour(ts, rs, rms, 3, colors='0.5')
                     plt.clabel(contours, inline=1, fontsize=10)
-                    axis_keys[key1].set_title('SST')
 
-    plt.legend(loc='upper right', ncol=3, fontsize=8)
+    #plt.legend(loc='upper right', ncol=3, fontsize=8)
 
     plt.savefig(os.path.join(save_dir, 'buoy_wrf_taylor_normalized.png'), format='png', dpi=300)
 
