@@ -2,7 +2,7 @@
 
 """
 Author: Lori Garzio on 1/7/2021
-Last modified: 1/14/2021
+Last modified: 1/15/2021
 Compares SLP from IBTrACS data to different WRF model runs for Hurricane Irene. Interpolated WRF time to IBTrACS time
 """
 
@@ -11,7 +11,8 @@ import os
 import glob
 import xarray as xr
 import pickle
-from geopy.distance import geodesic
+import pandas as pd
+from geographiclib.geodesic import Geodesic
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import cartopy.crs as ccrs
@@ -22,6 +23,89 @@ def format_date_axis(axis):
     datef = mdates.DateFormatter('%m-%d %H')
     axis.xaxis.set_major_formatter(datef)
     plt.xticks(rotation=30)
+
+
+def plot_map_tracks(obs_slp, mdict, plotting_variables, plotting_labels, save_figname):
+    proj = ccrs.PlateCarree()
+    fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(projection=proj))
+    ax.plot(obs_slp.lon, obs_slp.lat, transform=ccrs.PlateCarree(), color='black', label='NHC best track')
+
+    for pv in plotting_variables:
+        cnt = 0
+        for key, item in mdict.items():
+            if 'wrf' in key:
+                ax.plot(item[pv]['lons'], item[pv]['lats'], transform=proj, color=plotting_labels[key][1],
+                        label=plotting_labels[key][0])
+                cnt += 1
+
+    # add map features
+    ax.coastlines(resolution='10m', color='black', linewidth=0.5)
+    gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
+                      linewidth=0.5, color='gray', alpha=0.5, linestyle='--')
+    ax.set_extent([-78, -73, 34, 42])
+    ax.legend(fontsize=10)
+    gl.top_labels = gl.right_labels = False
+    gl.rotate_labels = False
+    gl.xlabel_style = {'size': 12}
+    gl.ylabel_style = {'size': 12}
+    plt.grid(True)
+    plt.savefig(save_figname, format='png', dpi=300)
+
+
+def plot_timeseries(obs_slp, mdict, plotting_variables, pltdata, plotting_labels, xvar, ylabel, sfig, title=None, ylims=None,
+                    best_track=None):
+    fig, ax = plt.subplots(figsize=(8, 4))
+    if best_track:
+        ax.plot(obs_slp.time.values, obs_slp.values, label='NHC best track', color='black', lw=2)
+
+    for pv in plotting_variables:
+        cnt = 0
+        for key, item in mdict.items():
+            if 'wrf' in key:
+                ax.plot(item[pv]['xvar'], item[pv][pltdata], color=plotting_labels[key][1],
+                        label=plotting_labels[key][0], lw=2)
+                cnt += 1
+
+    if ylims:
+        ax.set_ylim([950, 980])
+    plt.xlabel('Date (mm-dd HH)')
+    plt.ylabel(ylabel)
+    if title:
+        plt.title(title)
+    plt.legend(loc='upper left', fontsize=10)
+    plt.grid(True)
+
+    format_date_axis(ax)
+
+    plt.savefig(sfig, format='png', dpi=300, bbox_inches='tight')
+
+
+def plot_timeseries_trackerror(obs_slp, mdict, plotting_variables, pltdata, plotting_labels, ylabel, sfig,
+                               title=None, ylims=None, best_track=None):
+    fig, ax = plt.subplots(figsize=(8, 4))
+    if best_track:
+        ax.plot(obs_slp.time.values, obs_slp.values, label='NHC best track', color='black', lw=2)
+
+    for pv in plotting_variables:
+        cnt = 0
+        for key, item in mdict.items():
+            if 'wrf' in key:
+                ax.plot(obs_slp.time.values, item[pv][pltdata], color=plotting_labels[key][1],
+                        label=plotting_labels[key][0], lw=2)
+                cnt += 1
+
+    if ylims:
+        ax.set_ylim([950, 980])
+    plt.xlabel('Date (mm-dd HH)')
+    plt.ylabel(ylabel)
+    if title:
+        plt.title(title)
+    plt.legend(loc='upper left', fontsize=10)
+    plt.grid(True)
+
+    format_date_axis(ax)
+
+    plt.savefig(sfig, format='png', dpi=300, bbox_inches='tight')
 
 
 def main(ddir):
@@ -83,13 +167,16 @@ def main(ddir):
         wrf_dict[fname]['minslp']['lons_interp'] = lons_interp.values
         wrf_dict[fname]['minslp']['lats_interp'] = lats_interp.values
 
-        # calculate track error
+        # calculate track error geodesic distance and angle (degrees clockwise from north)
+        geod = Geodesic.WGS84
         diff_loc = np.array([])
+        trerror_angle = np.array([])
         for idx, iblat in enumerate(ib_slp.lat.values):
-            oloc = [iblat, ib_slp.lon.values[idx]]
-            mloc = [lats_interp.values[idx], lons_interp.values[idx]]
-            diff_loc = np.append(diff_loc, geodesic(oloc, mloc).kilometers)
+            g = geod.Inverse(iblat, ib_slp.lon.values[idx], lats_interp.values[idx], lons_interp.values[idx])
+            diff_loc = np.append(diff_loc, g['s12'] * .001)
+            trerror_angle = np.append(trerror_angle, np.round(g['azi1'], 2))
         wrf_dict[fname]['minslp']['track_error_km'] = diff_loc
+        wrf_dict[fname]['minslp']['track_error_angle'] = trerror_angle
 
         # calculate the correlation between model and obs (IBTrACS) and add to dictionary
         wrf_dict[fname]['minslp']['corr'] = cf.pearson_correlation(ib_slp, minslp_interp)
@@ -103,72 +190,59 @@ def main(ddir):
         # calculate bias between model and obs (IBTrACS) and add to dictionary
         wrf_dict[fname]['minslp']['bias'] = cf.model_bias(ib_slp, minslp_interp)
 
-    # plot map of minimum SLP (plot raw WRF data, not interpolated)
-    proj = ccrs.PlateCarree()
-    fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(projection=proj))
-    ax.plot(ib_slp.lon, ib_slp.lat, transform=ccrs.PlateCarree(), color='black', label='NHC best track')
+    # print track error and angle
+    df = pd.DataFrame()
+    df['ibtracs_time'] = ib_slp.time.values
+    df['ibtracs_lat'] = np.round(ib_slp.lat.values, 1)
+    df['ibtracs_lon'] = np.round(ib_slp.lon.values, 1)
+    df['wrf1_track_error_km'] = np.round(wrf_dict['wrf1']['minslp']['track_error_km'], 2)
+    df['wrf1_track_error_angle'] = wrf_dict['wrf1']['minslp']['track_error_angle']
+    df['wrf3_track_error_km'] = np.round(wrf_dict['wrf3']['minslp']['track_error_km'], 2)
+    df['wrf3_track_error_angle'] = wrf_dict['wrf3']['minslp']['track_error_angle']
+    df['wrf4_track_error_km'] = np.round(wrf_dict['wrf4']['minslp']['track_error_km'], 2)
+    df['wrf4_track_error_angle'] = wrf_dict['wrf4']['minslp']['track_error_angle']
+    df['wrf5_track_error_km'] = np.round(wrf_dict['wrf5']['minslp']['track_error_km'], 2)
+    df['wrf5_track_error_angle'] = wrf_dict['wrf5']['minslp']['track_error_angle']
+    df['wrf6_track_error_km'] = np.round(wrf_dict['wrf6']['minslp']['track_error_km'], 2)
+    df['wrf6_track_error_angle'] = wrf_dict['wrf6']['minslp']['track_error_angle']
 
+    df.to_csv(os.path.join(save_dir, 'track_error.csv'), index=False)
+
+    # define variables to plot
     plt_vars = ['minslp']
-    for pv in plt_vars:
-        cnt = 0
-        for key, item in wrf_dict.items():
-            if 'wrf' in key:
-                ax.plot(item[pv]['lons'], item[pv]['lats'], transform=proj, color=plt_labs[key][1],
-                        label=plt_labs[key][0])
-                cnt += 1
 
-    # add map features
-    ax.coastlines(resolution='10m', color='black', linewidth=0.5)
-    gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
-                      linewidth=0.5, color='gray', alpha=0.5, linestyle='--')
-    ax.set_extent([-78, -73, 34, 42])
-    ax.legend(fontsize=10)
-    gl.top_labels = gl.right_labels = False
-    gl.rotate_labels = False
-    gl.xlabel_style = {'size': 12}
-    gl.ylabel_style = {'size': 12}
-    plt.grid(True)
-    plt.savefig(os.path.join(save_dir, 'irene_track.png'), format='png', dpi=300)
+    # plot map of minimum SLP (plot raw WRF data, not interpolated)
+    sfig = os.path.join(save_dir, 'irene_track.png')
+    plot_map_tracks(ib_slp, wrf_dict, plt_vars, plt_labs, sfig)
 
     # plot timeseries of minimum SLP (plot raw WRF data, not interpolated)
-    fig, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(ib_slp.time.values, ib_slp.values, label='NHC best track', color='black', lw=2)
-
-    for pv in plt_vars:
-        cnt = 0
-        for key, item in wrf_dict.items():
-            if 'wrf' in key:
-                ax.plot(item[pv]['wrf_time'], item[pv]['values'], color=plt_labs[key][1], label=plt_labs[key][0], lw=2)
-                cnt += 1
-
-    ax.set_ylim([950, 980])
-    plt.xlabel('Date (mm-dd HH)')
-    plt.ylabel('Pressure (millibars)')
-    plt.title('Hurricane Irene Minimum Pressure')
-    plt.legend(loc='upper left', fontsize=10)
-    plt.grid(True)
-
-    format_date_axis(ax)
-
-    plt.savefig(os.path.join(save_dir, 'minslp_timeseries.png'), format='png', dpi=300, bbox_inches='tight')
+    time_var = 'wrf_time'
+    ylab = 'Pressure (millibars)'
+    title = 'Hurricane Irene Minimum Pressure'
+    ylim = [950, 980]
+    sfig = os.path.join(save_dir, 'minslp_timeseries.png')
+    plot_timeseries(ib_slp, wrf_dict, plt_vars, 'values', plt_labs, time_var, ylab, sfig, title, ylim, best_track='yes')
 
     # plot timeseries of track error
-    fig, ax = plt.subplots(figsize=(8, 4))
+    ylab = 'Track Error (km)'
+    sfig = os.path.join(save_dir, 'track_error_timeseries.png')
+    plot_timeseries_trackerror(ib_slp, wrf_dict, plt_vars, 'track_error_km', plt_labs, ylab, sfig)
+
+    # plot track error by latitude
+    fig, ax = plt.subplots(figsize=(6, 8))
     for pv in plt_vars:
         cnt = 0
         for key, item in wrf_dict.items():
             if 'wrf' in key:
-                ax.plot(ib_slp.time.values, item[pv]['track_error_km'], color=plt_labs[key][1],
+                ax.plot(item[pv]['track_error_km'], item[pv]['lats_interp'], color=plt_labs[key][1],
                         label=plt_labs[key][0], lw=2)
                 cnt += 1
-    plt.xlabel('Date (mm-dd HH)')
-    plt.ylabel('Track Error (km)')
-    plt.legend(loc='upper left', fontsize=10)
+    plt.xlabel('Track Error (km)')
+    plt.ylabel('Interpolated Latitude')
+    #plt.legend(loc='upper left', fontsize=10)
     plt.grid(True)
 
-    format_date_axis(ax)
-
-    plt.savefig(os.path.join(save_dir, 'track_error.png'), format='png', dpi=300, bbox_inches='tight')
+    plt.savefig(os.path.join(save_dir, 'track_error_latitude.png'), format='png', dpi=300, bbox_inches='tight')
 
     # Taylor diagram of WRF model runs, using the IBTrACS data as the observations
     angle_lim = np.pi / 2
