@@ -2,8 +2,8 @@
 
 """
 Author: Lori Garzio on 1/11/2021
-Last modified: 1/13/2021
-Compares SST, Air Temperature, Wind Speed, and SLP from NDBC buoys 44009 and 44065 to different WRF model runs for
+Last modified: 1/15/2021
+Compares SST, Air Temperature, SLP and Wind Speed from NDBC buoys 44009 and 44065 to different WRF model runs for
 Hurricane Irene. Interpolated buoy time to WRF time.
 """
 
@@ -24,7 +24,7 @@ def main(ddir):
 
     # define the plotting variable names: [buoy varname, WRF varname]
     plt_vars = {'sst': ['sea_surface_temperature', 'SST'], 'airtemp': ['air_temperature', 'T2'],
-                'wspd': ['wind_spd', 'U10'], 'slp': ['air_pressure', 'SLP']}
+                'slp': ['air_pressure', 'SLP'], 'wspd': ['wind_spd', 'U10'], 'wspd_adj': ['wind_spd', 'U10']}
 
     # get the plotting colors and labels: [label, color]
     with open('plt_labels.pickle', 'rb') as handle:
@@ -32,6 +32,7 @@ def main(ddir):
 
     # get buoy data
     buoys = ['44009', '44065']
+    adjust_lon = {'44009': -75.0, '44065': -73.932889}
     ddict = {}
     for buoy in buoys:
         buoy_fname = 'h'.join((buoy, '2011'))
@@ -54,6 +55,11 @@ def main(ddir):
             if fname == 'wrf1':
                 a = abs(ncfile.XLAT[:, :, 1] - blat) + abs(ncfile.XLONG[:, :, 1] - blon)
                 i, j = np.unravel_index(a.argmin(), a.shape)
+
+                # find adjusted lat/lon coordinate for the windspeed calculations
+                a_adj = abs(ncfile.XLAT[:, :, 1] - blat) + abs(ncfile.XLONG[:, :, 1] - adjust_lon[buoy])
+                iadj, jadj = np.unravel_index(a_adj.argmin(), a_adj.shape)
+
                 wrf_time = ncfile.Time
                 ddict['wrf_tm'] = wrf_time.values
 
@@ -75,13 +81,17 @@ def main(ddir):
                     ddict[buoy][pv]['buoy_interp_std'] = v_interp_stdev
 
                 # compare to WRF data
-                if varnames[1] == 'U10':  # calculate wind speed
+                if pv in ['wspd', 'wspd_adj']:  # calculate wind speed
                     wv = cf.wind_uv_to_spd(ncfile.U10, ncfile.V10)
                 else:
                     wv = ncfile[varnames[1]]
 
                 # subset the data at the buoy location
-                wv = wv[:, i, j]
+                if pv == 'wspd_adj':
+                    # subset the data at the adjusted location
+                    wv = wv[:, iadj, jadj]
+                else:
+                    wv = wv[:, i, j]
 
                 if pv in ['sst', 'airtemp']:
                     wv = wv - 273.15  # convert to degrees C
@@ -100,31 +110,34 @@ def main(ddir):
                 ddict[buoy][pv][fname]['bias'] = cf.model_bias(v_interp, wv)
 
     # plot timeseries of buoy vs model
-    fig, axs = plt.subplots(4, 2, figsize=(16, 8), sharex=True)
+    #fig, axs = plt.subplots(5, 2, figsize=(16, 8), sharex=True)
+    fig, axs = plt.subplots(5, 2, figsize=(18, 10), sharex=True)
     ax1 = axs[0, 0]  # 44009 sst
     ax2 = axs[0, 1]  # 44065 sst
     ax3 = axs[1, 0]  # 44009 airtemp
     ax4 = axs[1, 1]  # 44065 airtemp
-    ax5 = axs[2, 0]  # 44009 wspd
-    ax6 = axs[2, 1]  # 44065 wspd
-    ax7 = axs[3, 0]  # 44009 slp
-    ax8 = axs[3, 1]  # 44065 slp
+    ax5 = axs[2, 0]  # 44009 slp
+    ax6 = axs[2, 1]  # 44065 slp
+    ax7 = axs[3, 0]  # 44009 wspd
+    ax8 = axs[3, 1]  # 44065 wspd
+    ax9 = axs[4, 0]  # 44009 wspd adjusted
+    ax10 = axs[4, 1]  # 44065 wspd adjusted
     ax1.set_title('Model vs Buoy 44009')
     ax2.set_title('Model vs Buoy 44065')
 
-    axis_keys = {'44009': {'sst': ax1, 'airtemp': ax3, 'wspd': ax5, 'slp': ax7},
-                 '44065': {'sst': ax2, 'airtemp': ax4, 'wspd': ax6, 'slp': ax8}}
+    axis_keys = {'44009': {'sst': ax1, 'airtemp': ax3, 'slp': ax5, 'wspd': ax7, 'wspd_adj': ax9},
+                 '44065': {'sst': ax2, 'airtemp': ax4, 'slp': ax6, 'wspd': ax8, 'wspd_adj': ax10}}
 
     # define y-axis limits
-    ylims = {'sst': [16, 26], 'airtemp': [20, 28], 'wspd': [0, 28], 'slp': [950, 1025]}
+    ylims = {'sst': [16, 26], 'airtemp': [20, 28], 'slp': [950, 1025], 'wspd': [0, 28], 'wspd_adj': [0, 28]}
 
     # define annotation text and location
     anno_xval = dt.datetime(2011, 8, 27, hour=8)
-    anno_yval = {'sst': 18, 'airtemp': 21, 'wspd': 22, 'slp': 960}
-    anno_lab = {'44009': {'sst': 'A) SST', 'airtemp': 'C) 2m Air Temperature', 'wspd': 'E) 10m Wind Speed',
-                          'slp': 'G) Sea Level Pressure'},
-                '44065': {'sst': 'B) SST', 'airtemp': 'D) 2m Air Temperature', 'wspd': 'F) 10m Wind Speed',
-                          'slp': 'H) Sea Level Pressure'}}
+    anno_yval = {'sst': 18, 'airtemp': 21, 'slp': 960, 'wspd': 22, 'wspd_adj': 22}
+    anno_lab = {'44009': {'sst': 'A) SST', 'airtemp': 'C) 2m Air Temperature', 'slp': 'E) Sea Level Pressure',
+                          'wspd': 'G) 10m Wind Speed', 'wspd_adj': 'I) 10m Wind Speed Adjusted'},
+                '44065': {'sst': 'B) SST', 'airtemp': 'D) 2m Air Temperature', 'slp': 'F) Sea Level Pressure',
+                          'wspd': 'H) 10m Wind Speed', 'wspd_adj': 'J) 10m Wind Speed Adjusted'}}
 
     for key, item in ddict.items():
         if 'wrf' not in key:
@@ -179,10 +192,10 @@ def main(ddir):
     # add taylor templates to figure
     fig, ax1 = cf.taylor_template(angle_lim, std_lim, 221, fig)  # sst
     fig, ax2 = cf.taylor_template(angle_lim, std_lim, 222, fig)  # airtemp
-    fig, ax3 = cf.taylor_template(angle_lim, std_lim, 223, fig)  # wspd
-    fig, ax4 = cf.taylor_template(angle_lim, std_lim, 224, fig)  # slp
+    fig, ax3 = cf.taylor_template(angle_lim, std_lim, 223, fig)  # slp
+    fig, ax4 = cf.taylor_template(angle_lim, std_lim, 224, fig)  # wspd adjusted
 
-    axis_keys = {'sst': ax1, 'airtemp': ax2, 'wspd': ax3, 'slp': ax4}
+    axis_keys = {'sst': ax1, 'airtemp': ax2, 'slp': ax3, 'wspd': ax4, 'wspd_adj': ax4}
 
     # define marker shape for buoys
     marker_shp = {'44009': 's', '44065': 'o'}
@@ -197,8 +210,12 @@ def main(ddir):
                             rr = item2['wrf_std'] / item1['buoy_interp_std']
                             # axis_keys[key1].plot(theta, rr, marker_shp[key], color=plt_labs[key2][1],
                             #                      markersize=8, mec='k')
-                            axis_keys[key1].plot(theta, rr, marker_shp[key], markersize=9, fillstyle='none',
-                                                 mec=plt_labs[key2][1], markeredgewidth=2)
+                            if key1 == 'wspd_adj':
+                                axis_keys[key1].plot(theta, rr, marker_shp[key], markersize=9,
+                                                     color=plt_labs[key2][1])
+                            else:
+                                axis_keys[key1].plot(theta, rr, marker_shp[key], markersize=9, fillstyle='none',
+                                                     mec=plt_labs[key2][1], markeredgewidth=2)
 
                     # add contours
                     axis_keys[key1].plot(0, 1, 'o', color='tab:blue', markersize=8, mec='k', alpha=1)
