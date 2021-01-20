@@ -13,6 +13,7 @@ import glob
 import datetime as dt
 import xarray as xr
 import pickle
+import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import functions.common as cf
@@ -139,6 +140,10 @@ def main(ddir):
                 '44065': {'sst': 'B) SST', 'airtemp': 'D) 2m Air Temperature', 'slp': 'F) Sea Level Pressure',
                           'wspd': 'H) 10m Wind Speed', 'wspd_adj': 'J) 10m Wind Speed Adjusted'}}
 
+    wspd_rows = []
+    wspd_adj_rows = []
+    df_headers = ['buoy', 'model', 'bias']
+
     for key, item in ddict.items():
         if 'wrf' not in key:
             for key1, item1 in item.items():  # loop through each plotting variable
@@ -149,11 +154,21 @@ def main(ddir):
                         if 'wrf' in key2:
                             axk.plot(ddict['wrf_tm'], item2['wrf_values'], color=plt_labs[key2][1], lw=2,
                                      label=plt_labs[key2][0])
+                            if key1 == 'wspd':
+                                wspd_rows.append([key, key2, item2['bias']])
+                            if key1 == 'wspd_adj':
+                                wspd_adj_rows.append([key, key2, item2['bias']])
                         if key2 == 'wrf6':
                             axk.annotate(anno_lab[key][key1], xy=(anno_xval, anno_yval[key1]))  # add text to plot
                             axk.set_ylim(ylims[key1])
                             if key1 == 'sst':
                                 axk.set_yticks(np.linspace(16, 26, 6))
+
+    df_wspd = pd.DataFrame(wspd_rows, columns=df_headers)
+    df_wspd.to_csv(os.path.join(save_dir, 'wspd_bias.csv'), index=False)
+
+    df_wspd_adj = pd.DataFrame(wspd_adj_rows, columns=df_headers)
+    df_wspd_adj.to_csv(os.path.join(save_dir, 'wspd_adjusted_bias.csv'), index=False)
 
     custom_xlim = ([dt.datetime(2011, 8, 27, hour=6), dt.datetime(2011, 8, 29, hour=0)])
     plt.setp(fig.get_axes(), xlim=custom_xlim)
@@ -170,8 +185,6 @@ def main(ddir):
 
     # plot Taylor diagrams
     fig, axs = plt.subplots(2, 2, figsize=(10, 10))
-
-    #titles = ['SST', '2m Air Temperature', '10m Wind Speed', 'Sea Level Pressure']
 
     plt.text(0.08, 0.88, 'A)', fontsize=14, transform=plt.gcf().transFigure)
     plt.text(0.5, 0.88, 'B)', fontsize=14, transform=plt.gcf().transFigure)
