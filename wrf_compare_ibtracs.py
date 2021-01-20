@@ -2,7 +2,7 @@
 
 """
 Author: Lori Garzio on 1/7/2021
-Last modified: 1/15/2021
+Last modified: 1/20/2021
 Compares SLP from IBTrACS data to different WRF model runs for Hurricane Irene. Interpolated WRF time to IBTrACS time
 """
 
@@ -52,6 +52,75 @@ def plot_map_tracks(obs_slp, mdict, plotting_variables, plotting_labels, save_fi
     plt.savefig(save_figname, format='png', dpi=300)
 
 
+def plot_map_tracks_bias(obs_slp, mdict, plotting_variables, plotting_labels, save_figname):
+    coords44009 = [38.457, -74.702]
+    coords44065 = [40.369, -73.703]
+    coords_ru16 = [39.222263788799964, -73.83885219215215]
+
+    landfall_idx = 10
+
+    proj = ccrs.PlateCarree()
+    fig = plt.figure(figsize=(8, 7))
+    gs = fig.add_gridspec(3, 3)
+    gs.update(left=0.01, right=0.92, bottom=0.1, wspace=0.001)
+    ax1 = fig.add_subplot(gs[:, :-1], projection=proj)
+    ax2 = fig.add_subplot(gs[:, -1], sharey=ax1)
+    ax1.plot(obs_slp.lon, obs_slp.lat, transform=ccrs.PlateCarree(), color='black', label='NHC best track')
+    ax1.plot(obs_slp.lon[landfall_idx], obs_slp.lat[landfall_idx], transform=ccrs.PlateCarree(), marker='o', color='black')
+
+    for pv in plotting_variables:
+        cnt = 0
+        for key, item in mdict.items():
+            if 'wrf' in key:
+                # plot track
+                ax1.plot(item[pv]['lons'], item[pv]['lats'], transform=proj, color=plotting_labels[key][1],
+                        label=plotting_labels[key][0])
+                # plot landfall
+                ax1.plot(item[pv]['lons'][28], item[pv]['lats'][28], transform=proj, marker='o',
+                         color=plotting_labels[key][1])
+                cnt += 1
+
+    # add buoy and glider locations
+    ax1.plot(coords44009[-1], coords44009[0], transform=ccrs.PlateCarree(), marker='^', ls='none', color='black',
+             label='44009')
+    ax1.plot(coords44065[-1], coords44065[0], transform=ccrs.PlateCarree(), marker='s', ls='none', color='black',
+             label='44065')
+    ax1.plot(coords_ru16[-1], coords_ru16[0], transform=ccrs.PlateCarree(), marker='d', ls='none', color='blue',
+             label='RU16')
+
+    # add map features
+    ax1.coastlines(resolution='10m', color='black', linewidth=0.5)
+    gl = ax1.gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
+                      linewidth=0.5, color='gray', alpha=0.5, linestyle='--')
+    ax1.set_extent([-78, -73, 34, 42])
+    ax1.legend(fontsize=10)
+    gl.top_labels = gl.right_labels = False
+    gl.rotate_labels = False
+    gl.xlabel_style = {'size': 12}
+    gl.ylabel_style = {'size': 12}
+    ax1.grid(True)
+
+    # add track bias
+    for pv in plotting_variables:
+        cnt = 0
+        for key, item in mdict.items():
+            if 'wrf' in key:
+                ax2.plot(item[pv]['track_error_km'], item[pv]['lats_interp'], color=plotting_labels[key][1],
+                        label=plotting_labels[key][0], lw=2)
+                cnt += 1
+
+    ax2.axhline(coords44009[0], color='k')
+    ax2.axhline(coords44065[0], color='k')
+    ax2.axhline(coords_ru16[0], color='b')
+    ax2.set_yticklabels([])
+    ax2.xaxis.set_tick_params(labelsize=12)
+    ax2.set_xlabel('Track Error (km)', fontsize=12)
+    #plt.ylabel('Interpolated Latitude')
+    #plt.legend(loc='upper left', fontsize=10)
+    ax2.grid(linewidth=0.5, color='gray', alpha=0.5, linestyle='--')
+    plt.savefig(save_figname, format='png', dpi=300)
+
+
 def plot_timeseries(obs_slp, mdict, plotting_variables, pltdata, plotting_labels, xvar, ylabel, sfig, title=None, ylims=None,
                     best_track=None):
     fig, ax = plt.subplots(figsize=(8, 4))
@@ -62,7 +131,7 @@ def plot_timeseries(obs_slp, mdict, plotting_variables, pltdata, plotting_labels
         cnt = 0
         for key, item in mdict.items():
             if 'wrf' in key:
-                ax.plot(item[pv]['xvar'], item[pv][pltdata], color=plotting_labels[key][1],
+                ax.plot(item[pv][xvar], item[pv][pltdata], color=plotting_labels[key][1],
                         label=plotting_labels[key][0], lw=2)
                 cnt += 1
 
@@ -132,6 +201,8 @@ def main(ddir):
             irene_ib = irene_ib.swap_dims({'date_time': 'time'})
             ib_slp = irene_ib.usa_pres
             ib_slp = ib_slp[~np.isnan(ib_slp)]  # remove nans
+            ib_lf = irene_ib.landfall
+            ib_lf = ib_lf[~np.isnan(ib_lf)]  # remove nans
             #ib_slp_interp = ib_slp.interp(time=wrf_time)
             #ib_slp_interp_stdev = ib_slp_interp.std().values.item()
 
@@ -154,6 +225,8 @@ def main(ddir):
         lons_interp = lons_interp[nanidx]
         lats_interp = lats_interp[nanidx]
         ib_slp = ib_slp[nanidx]
+        #ib_lf = np.append(ib_lf.values, 0)  # make the arrays the same length for indexing
+        #ib_lf = ib_lf[nanidx]
         ib_slp_stdev = ib_slp.std().values.item()
 
         # add data to dictionary
@@ -210,6 +283,10 @@ def main(ddir):
 
     # define variables to plot
     plt_vars = ['minslp']
+
+    # plot map of minimum SLP (plot raw WRF data, not interpolated) and track bias
+    sfig = os.path.join(save_dir, 'combined_irene_track_bias.png')
+    plot_map_tracks_bias(ib_slp, wrf_dict, plt_vars, plt_labs, sfig)
 
     # plot map of minimum SLP (plot raw WRF data, not interpolated)
     sfig = os.path.join(save_dir, 'irene_track.png')
