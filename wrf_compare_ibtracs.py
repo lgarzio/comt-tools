@@ -10,7 +10,7 @@ import numpy as np
 import os
 import glob
 import xarray as xr
-import pickle
+import pickle5 as pickle
 import pandas as pd
 from geographiclib.geodesic import Geodesic
 import matplotlib.pyplot as plt
