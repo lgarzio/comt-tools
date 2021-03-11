@@ -26,7 +26,7 @@ def pearson_correlation(data1, data2):
     return pc
 
 
-def taylor_template(angle_lim, std_lim, rect, fig=None):
+def taylor_template(angle_lim, std_lim, rect, xaxislab, fig=None):
     # written by Maria Aristizabal: https://github.com/MariaAristizabal/Evaluation_surf_metrics_Dorian_figures
     import mpl_toolkits.axisartist.floating_axes as floating_axes
     from matplotlib.projections import PolarAxes
@@ -67,7 +67,8 @@ def taylor_template(angle_lim, std_lim, rect, fig=None):
     ax1.axis['top'].label.set_size(14)
 
     ax1.axis["left"].set_axis_direction("bottom")
-    ax1.axis["left"].label.set_text("Normalized Standard Deviation")
+    if xaxislab == 'yes':
+        ax1.axis["left"].label.set_text("Normalized Standard Deviation")
     ax1.axis['left'].label.set_size(14)
 
     ax1.axis["right"].set_axis_direction("top")
