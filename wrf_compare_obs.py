@@ -19,6 +19,7 @@ import pandas as pd
 import pickle5 as pickle
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+from matplotlib.lines import Line2D
 import functions.common as cf
 pd.set_option('display.width', 320, "display.max_columns", 10)  # for display in pycharm console
 
@@ -319,11 +320,12 @@ def main(ddir):
 
     ax6.legend(loc='upper right', framealpha=0.5, ncol=3, fontsize=10)
 
-    # handles, labels = plt.gca().get_legend_handles_labels()  # only show one set of legend labels
-    # by_label = dict(zip(labels, handles))
+    # get legend handles for Taylor diagrams below
+    handles, labels = plt.gca().get_legend_handles_labels()  # only show one set of legend labels
+    by_label = dict(zip(labels, handles))
     # fig.legend(by_label.values(), by_label.keys(), framealpha=0.5, ncol=3, bbox_to_anchor=(0.89, 0.84), fontsize=12)
 
-    plt.savefig(os.path.join(save_dir, 'wrf_obs_comp.png'), format='png', dpi=300)
+    #plt.savefig(os.path.join(save_dir, 'wrf_obs_comp.png'), format='png', dpi=300)
 
     # plot Taylor diagrams (buoys and met tower)
     fig, axs = plt.subplots(2, 2, figsize=(10, 10))
@@ -332,6 +334,11 @@ def main(ddir):
     plt.text(0.5, 0.88, 'B)', fontsize=14, transform=plt.gcf().transFigure)  # airtemp
     plt.text(0.08, 0.46, 'C)', fontsize=14, transform=plt.gcf().transFigure)  # slp
     plt.text(0.5, 0.46, 'D)', fontsize=14, transform=plt.gcf().transFigure)  # wspd and wspd
+
+    plt.text(0.175, 0.91, 'Sea Surface Temperature', fontsize=14, transform=plt.gcf().transFigure)  # sst
+    plt.text(0.64, 0.91, 'Air Temperature', fontsize=14, transform=plt.gcf().transFigure)  # airtemp
+    plt.text(0.27, 0.475, 'MSLP', fontsize=14, transform=plt.gcf().transFigure)  # slp
+    plt.text(0.66, 0.475, 'Wind Speed', fontsize=14, transform=plt.gcf().transFigure)  # wspd
 
     # turn off the subplot axis lines and labels
     for i, ax in enumerate(fig.axes):
@@ -345,10 +352,10 @@ def main(ddir):
     rms = np.sqrt(1 + rs ** 2 - 2 * rs * np.cos(ts))
 
     # add taylor templates to figure
-    fig, ax1 = cf.taylor_template(angle_lim, std_lim, 221, fig)  # sst
-    fig, ax2 = cf.taylor_template(angle_lim, std_lim, 222, fig)  # airtemp
-    fig, ax3 = cf.taylor_template(angle_lim, std_lim, 223, fig)  # slp
-    fig, ax4 = cf.taylor_template(angle_lim, std_lim, 224, fig)  # wspd
+    fig, ax1 = cf.taylor_template(angle_lim, std_lim, 221, 'no', fig)  # sst
+    fig, ax2 = cf.taylor_template(angle_lim, std_lim, 222, 'no', fig)  # airtemp
+    fig, ax3 = cf.taylor_template(angle_lim, std_lim, 223, 'yes', fig)  # slp
+    fig, ax4 = cf.taylor_template(angle_lim, std_lim, 224, 'yes', fig)  # wspd
 
     axis_keys = {'sst': ax1, 'airtemp': ax2, 'slp': ax3, 'wspd': ax4}
 
@@ -373,11 +380,22 @@ def main(ddir):
                                                      mec=plt_labs[key2][1], markeredgewidth=2)
 
                     # add contours
-                    axis_keys[key1].plot(0, 1, 'o', color='tab:blue', markersize=8, mec='k', alpha=1)
+                    axis_keys[key1].plot(0, 1, 'o', color='k', markersize=8, mec='k', alpha=1)
                     contours = axis_keys[key1].contour(ts, rs, rms, 3, colors='0.5')
                     plt.clabel(contours, inline=1, fontsize=10)
 
     # plt.legend(loc='upper right', ncol=3, fontsize=8)
+
+    # add legend from previous line plot to panel A
+    fig.legend(by_label.values(), by_label.keys(), framealpha=0.5, ncol=2, bbox_to_anchor=(0.305, 0.829), fontsize=8)
+
+    # add custom figure legend to panel C
+    legend_elements = [Line2D([0], [0], marker='s', c='None', mec='dimgray', mew=2, ls='None', label='44009', ms=7),
+                       Line2D([0], [0], marker='o', c='None', mec='dimgray', mew=2, ls='None', label='44065', ms=7),
+                       Line2D([0], [0], marker='x', c='None', mec='dimgray', mew=2, ls='None', label='Tuckerton', ms=7),
+                       Line2D([0], [0], marker='^', c='None', mec='dimgray', mew=2, ls='None', label='RU-16', ms=7)]
+
+    fig.legend(handles=legend_elements, framealpha=0.5, ncol=2, bbox_to_anchor=(0.321, 0.4), fontsize=8)
 
     plt.savefig(os.path.join(save_dir, 'wrf_obs_taylor_normalized.png'), format='png', dpi=300)
 
