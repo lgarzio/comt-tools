@@ -26,6 +26,12 @@ def pearson_correlation(data1, data2):
     return pc
 
 
+def rmse(obs, pred):
+    diff = pred.values - obs.values
+    res = round(np.sqrt(np.nanmean(diff ** 2)), 2)
+    return res
+
+
 def taylor_template(angle_lim, std_lim, rect, xaxislab, fig=None):
     # written by Maria Aristizabal: https://github.com/MariaAristizabal/Evaluation_surf_metrics_Dorian_figures
     import mpl_toolkits.axisartist.floating_axes as floating_axes

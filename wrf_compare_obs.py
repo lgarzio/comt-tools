@@ -2,9 +2,9 @@
 
 """
 Author: Lori Garzio on 1/11/2021
-Last modified: 3/11/2021
+Last modified: 4/1/2021
 Compares SST, Air Temperature, SLP and Wind Speed from NDBC buoys 44009 and 44065, data from the Tuckerton met tower,
-and data from RU-16 to different WRF model runs for Hurricane Irene. Interpolated observation time to WRF time.
+and data from RU-16 to different WRF and ROMS model runs for Hurricane Irene. Interpolated observation time to WRF time.
 Adjusted buoy wind speeds to 10m using a wind power law.
 """
 
@@ -52,6 +52,16 @@ def find_obs_loc(wrf_fname, obs_loc):
     ds = xr.open_dataset(wrf_fname, mask_and_scale=False)
 
     a = abs(ds.XLAT[:, :, 1] - obs_loc[0]) + abs(ds.XLONG[:, :, 1] - obs_loc[1])
+    ia, ja = np.unravel_index(a.argmin(), a.shape)
+
+    return ia, ja
+
+
+def find_obs_loc_roms(roms_fname, obs_loc):
+    # find the lat/lon index in the dataset that corresponds with the observation lat/lon
+    ds = xr.open_dataset(roms_fname, mask_and_scale=False)
+
+    a = abs(ds.lat_rho-obs_loc[0]) + abs(ds.lon_rho - obs_loc[1])
     ia, ja = np.unravel_index(a.argmin(), a.shape)
 
     return ia, ja
@@ -135,10 +145,43 @@ def get_met_data(met_fname, plot_var, vname, interp_time, data_dict):
     return met_lat, met_lon, met_interp
 
 
+def get_roms_time(roms_fname):
+    ds = xr.open_dataset(roms_fname, mask_and_scale=False)
+    wt = ds.ocean_time.values
+    return wt
+
+
 def get_wrf_time(wrf_fname):
     ds = xr.open_dataset(wrf_fname, mask_and_scale=False)
     wt = ds.Time.values
     return wt
+
+
+def subset_roms(romsfiles, plot_var, vname, loci_idx, locj_idx, data_dict, compare_obs, interp_obs_values):
+    for rf in romsfiles:
+        roms_ver = 'roms' + rf.split('/')[-1].split('_')[-1][3]
+        ds = xr.open_dataset(rf, mask_and_scale=False)
+
+        # subset the data at the observation location
+        model_var = ds[vname][:, :, loci_idx, locj_idx]
+        h = ds.h[loci_idx, locj_idx]
+
+        # grab SST - the max s_rho is the surface data
+        model_var = model_var.sel(s_rho=np.nanmax(model_var.s_rho))
+
+        # add ROMS data to dictionary
+        try:
+            data_dict[compare_obs][plot_var][roms_ver]
+        except KeyError:
+            data_dict[compare_obs][plot_var][roms_ver] = {}
+        data_dict[compare_obs][plot_var][roms_ver]['roms_values'] = model_var.values
+
+        # calculate stats and add values to dictionary
+        data_dict[compare_obs][plot_var][roms_ver]['roms_std'] = model_var.std().values.item()
+        data_dict[compare_obs][plot_var][roms_ver]['corr'] = cf.pearson_correlation(interp_obs_values, model_var)
+        data_dict[compare_obs][plot_var][roms_ver]['crmse'] = cf.crmse(interp_obs_values, model_var)
+        data_dict[compare_obs][plot_var][roms_ver]['rmse'] = cf.rmse(interp_obs_values, model_var)
+        data_dict[compare_obs][plot_var][roms_ver]['bias'] = cf.model_bias(interp_obs_values, model_var)
 
 
 def subset_wrf(wrffiles, plot_var, vname, loci_idx, locj_idx, data_dict, compare_obs, interp_obs_values):
@@ -169,6 +212,7 @@ def subset_wrf(wrffiles, plot_var, vname, loci_idx, locj_idx, data_dict, compare
         data_dict[compare_obs][plot_var][wrf_ver]['wrf_std'] = model_var.std().values.item()
         data_dict[compare_obs][plot_var][wrf_ver]['corr'] = cf.pearson_correlation(interp_obs_values, model_var)
         data_dict[compare_obs][plot_var][wrf_ver]['crmse'] = cf.crmse(interp_obs_values, model_var)
+        data_dict[compare_obs][plot_var][wrf_ver]['rmse'] = cf.rmse(interp_obs_values, model_var)
         data_dict[compare_obs][plot_var][wrf_ver]['bias'] = cf.model_bias(interp_obs_values, model_var)
 
 
@@ -176,7 +220,7 @@ def main(ddir):
     save_dir = os.path.join(os.path.dirname(ddir), 'plots')
     os.makedirs(save_dir, exist_ok=True)
 
-    #glider = '/Users/lgarzio/Documents/rucool/Miles/NOAA_COMT/data/glider/ru16-20110810T1330-profile-sci-rt_1da3_c3e1_51f4.nc'
+    #glider = '/Users/garzio/Documents/rucool/Miles/NOAA_COMT/data/glider/ru16-20110810T1330-profile-sci-rt_1da3_c3e1_51f4.nc'
 
     met_tower = '{}/met_tower.csv'.format(os.path.join(ddir, 'met_tower'))
 
@@ -194,9 +238,12 @@ def main(ddir):
     ddict = {}
 
     wrf_files = sorted(glob.glob(os.path.join(ddir, '*subset.nc')))
-
     wrf_time = get_wrf_time(wrf_files[0])
     ddict['wrf_tm'] = wrf_time
+
+    roms_files = sorted(glob.glob(os.path.join(ddir, 'roms*.nc')))
+    roms_time = get_roms_time(roms_files[0])
+    ddict['roms_tm'] = roms_time
 
     for obs in observations:
         ddict[obs] = {}
@@ -212,6 +259,13 @@ def main(ddir):
 
                 # get WRF data corresponding to the observation lat/lon
                 subset_wrf(wrf_files, pv, varnames[1], loci, locj, ddict, obs, obs_interp)
+
+                if pv == 'sst':
+                    # for the first ROMS file, find the lat/lon coordinate that corresponds with the observation lat/lon
+                    loci, locj = find_obs_loc_roms(roms_files[0], [obs_lat, obs_lon])
+
+                    # get ROMS data corresponding to the observation lat/lon
+                    subset_roms(roms_files, pv, 'temp', loci, locj, ddict, obs, obs_interp)
 
             elif obs == 'met_tower':
                 if 'sst' not in pv:
@@ -232,6 +286,12 @@ def main(ddir):
 
                     # get WRF data corresponding to the observation lat/lon
                     subset_wrf(wrf_files, pv, varnames[1], loci, locj, ddict, obs, obs_interp)
+
+                    # for the first ROMS file, find the lat/lon coordinate that corresponds with the observation lat/lon
+                    loci, locj = find_obs_loc_roms(roms_files[0], [obs_lat, obs_lon])
+
+                    # get ROMS data corresponding to the observation lat/lon
+                    subset_roms(roms_files, pv, 'temp', loci, locj, ddict, obs, obs_interp)
 
     # plot timeseries panels of observations vs WRF
     fig, axs = plt.subplots(4, 3, figsize=(18, 12), sharex=True)
@@ -269,10 +329,12 @@ def main(ddir):
 
     wspd_rows = []
     wspd_adj_rows = []
+    slp_rows = []
     df_headers = ['buoy', 'model', 'bias']
+    #df_headers = ['buoy', 'model', 'rmse']
 
     for key, item in ddict.items():
-        if key not in ['wrf_tm']:
+        if key not in ['wrf_tm', 'roms_tm']:
             for key1, item1 in item.items():  # loop through each plotting variable
                 if key1 not in ['lat', 'lon']:
                     axk = axis_keys[key][key1]  # get axis object
@@ -282,9 +344,16 @@ def main(ddir):
                             axk.plot(ddict['wrf_tm'], item2['wrf_values'], color=plt_labs[key2][1], lw=2,
                                      label=plt_labs[key2][0])
                             if key1 == 'wspd':
-                                wspd_rows.append([key, key2, item2['bias']])
+                                #wspd_rows.append([key, key2, item2['bias']])
+                                wspd_rows.append([key, key2, item2['rmse']])
                             if key1 == 'wspd_adj':
                                 wspd_adj_rows.append([key, key2, item2['bias']])
+                            if key1 == 'slp':
+                                #slp_rows.append([key, key2, item2['bias']])
+                                slp_rows.append([key, key2, item2['rmse']])
+                        elif 'roms' in key2:
+                            axk.plot(ddict['roms_tm'], item2['roms_values'], color=plt_labs[key2][1], lw=2, ls='--',
+                                     label=plt_labs[key2][0])
                         if key2 == 'wrf6':
                             axk.annotate(anno_lab[key][key1], xy=(anno_xval, anno_yval[key1]))  # add text to plot
                             axk.set_ylim(ylims[key1])
@@ -297,6 +366,17 @@ def main(ddir):
     #
     # df_wspd_adj = pd.DataFrame(wspd_adj_rows, columns=df_headers)
     # df_wspd_adj.to_csv(os.path.join(save_dir, 'wspd_adjusted_bias.csv'), index=False)
+
+    # print SLP bias
+    # df_slp = pd.DataFrame(slp_rows, columns=df_headers)
+    # df_slp.to_csv(os.path.join(save_dir, 'slp_bias.csv'), index=False)
+
+    # print rmse
+    # df_rmse = pd.DataFrame(wspd_rows, columns=df_headers)
+    # df_rmse.to_csv(os.path.join(save_dir, 'wspd_rmse.csv'), index=False)
+
+    # df_rmse_slp = pd.DataFrame(slp_rows, columns=df_headers)
+    # df_rmse_slp.to_csv(os.path.join(save_dir, 'slp_rmse-test.csv'), index=False)
 
     # format x-axes
     custom_xlim = ([dt.datetime(2011, 8, 27, hour=6), dt.datetime(2011, 8, 29, hour=0)])
@@ -325,7 +405,7 @@ def main(ddir):
     by_label = dict(zip(labels, handles))
     # fig.legend(by_label.values(), by_label.keys(), framealpha=0.5, ncol=3, bbox_to_anchor=(0.89, 0.84), fontsize=12)
 
-    #plt.savefig(os.path.join(save_dir, 'wrf_obs_comp.png'), format='png', dpi=300)
+    plt.savefig(os.path.join(save_dir, 'wrf_obs_comp.png'), format='png', dpi=300)
 
     # plot Taylor diagrams (buoys and met tower)
     fig, axs = plt.subplots(2, 2, figsize=(10, 10))
@@ -384,7 +464,24 @@ def main(ddir):
                     contours = axis_keys[key1].contour(ts, rs, rms, 3, colors='0.5')
                     plt.clabel(contours, inline=1, fontsize=10)
 
-    # plt.legend(loc='upper right', ncol=3, fontsize=8)
+    # add data from IBTrACS comparison
+    # minimum SLP
+    ib_slp_stdev = 8.781468391418457
+    ib_wind_stdev = 4.761341571807861
+    with open('ibtracs_wrf_compare.pickle', 'rb') as handle:
+        wrf_ibtracs = pickle.load(handle)
+    for key, item in wrf_ibtracs.items():
+        if 'wrf' in key:
+            theta = np.arccos(item['minslp']['corr'])
+            rr = item['minslp']['std'] / ib_slp_stdev
+            ax3.plot(theta, rr, 'D', mec=plt_labs[key][1], markersize=9, fillstyle='none', markeredgewidth=2)
+
+    # max windspeed
+    for key, item in wrf_ibtracs.items():
+        if 'wrf' in key:
+            theta = np.arccos(item['maxws']['corr'])
+            rr = item['maxws']['std'] / ib_wind_stdev
+            ax4.plot(theta, rr, 'D', mec=plt_labs[key][1], markersize=9, fillstyle='none', markeredgewidth=2)
 
     # add legend from previous line plot to panel A
     fig.legend(by_label.values(), by_label.keys(), framealpha=0.5, ncol=2, bbox_to_anchor=(0.305, 0.829), fontsize=8)
@@ -392,14 +489,16 @@ def main(ddir):
     # add custom figure legend to panel C
     legend_elements = [Line2D([0], [0], marker='s', c='None', mec='dimgray', mew=2, ls='None', label='44009', ms=7),
                        Line2D([0], [0], marker='o', c='None', mec='dimgray', mew=2, ls='None', label='44065', ms=7),
+                       Line2D([0], [0], marker='^', c='None', mec='dimgray', mew=2, ls='None', label='RU-16', ms=7),
                        Line2D([0], [0], marker='x', c='None', mec='dimgray', mew=2, ls='None', label='Tuckerton', ms=7),
-                       Line2D([0], [0], marker='^', c='None', mec='dimgray', mew=2, ls='None', label='RU-16', ms=7)]
+                       Line2D([0], [0], marker='D', c='None', mec='dimgray', mew=2, ls='None', label='Best Track', ms=7)]
 
-    fig.legend(handles=legend_elements, framealpha=0.5, ncol=2, bbox_to_anchor=(0.321, 0.4), fontsize=8)
+    #fig.legend(handles=legend_elements, framealpha=0.5, ncol=2, bbox_to_anchor=(0.321, 0.4), fontsize=8)
+    fig.legend(handles=legend_elements, framealpha=0.5, ncol=2, bbox_to_anchor=(0.322, 0.405), fontsize=8)
 
     plt.savefig(os.path.join(save_dir, 'wrf_obs_taylor_normalized.png'), format='png', dpi=300)
 
 
 if __name__ == '__main__':
-    data_dir = '/Users/lgarzio/Documents/rucool/Miles/NOAA_COMT/data'  # location of data files
+    data_dir = '/Users/garzio/Documents/rucool/Miles/NOAA_COMT/data'  # location of data files
     main(data_dir)
